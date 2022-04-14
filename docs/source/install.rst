@@ -10,7 +10,7 @@ Some good practices to follow for options below are:
 - Use new and isolated Virtual Environments for each project (`venv <https://docs.python.org/3/library/venv.html>`_).
 - On Notebooks, always restart your kernel after installations.
 
-.. note:: If you want to use ``awswrangler`` to connect to Microsoft SQL Server, some additional configuration is needed. Please have a look at the corresponding section below.
+.. note:: If you want to use ``awswrangler`` to connect to Microsoft SQL Server or Oracle, some additional configuration is needed. Please have a look at the corresponding section below.
 
 PyPI (pip)
 ----------
@@ -288,6 +288,36 @@ to see how they can be installed in your environment.
 
 If you want to connect to Microsoft SQL Server from AWS Lambda, you can build a separate Layer including the
 needed OBDC drivers and `pyobdc`.
+
+If you maintain your own environment, you need to take care of the above steps.
+Because of this limitation usage in combination with Glue jobs is limited and you need to rely on the
+provided `functionality inside Glue itself <https://docs.aws.amazon.com/glue/latest/dg/
+aws-glue-programming-etl-connect.html#aws-glue-programming-etl-connect-jdbc>`_.
+
+
+Notes for Oracle Database
+------------------------------
+
+``awswrangler`` is using the `pyodbc <https://github.com/mkleehammer/pyodbc>`_
+for interacting with Oracle Database. For installing this package you need the ODBC header files,
+which can be installed, for example, with the following commands:
+
+    >>> sudo apt install unixodbc-dev
+    >>> yum install unixODBC-devel
+
+After installing these header files you can either just install ``cx_Oracle`` or
+``awswrangler`` with the ``sqlserver`` extra, which will also install ``cx_Oracle``:
+
+    >>> pip install cx_Oracle
+    >>> pip install awswrangler[oracle]
+
+Finally you also need the correct ODBC Driver for Oracle. You can have a look at the
+`documentation from Microsoft <https://docs.microsoft.com/sql/connect/odbc/
+microsoft-odbc-driver-for-sql-server?view=sql-server-ver15>`_
+to see how they can be installed in your environment.
+
+If you want to connect to Oracle from AWS Lambda, you can build a separate Layer including the
+needed OBDC drivers and `cx_Oracle`.
 
 If you maintain your own environment, you need to take care of the above steps.
 Because of this limitation usage in combination with Glue jobs is limited and you need to rely on the

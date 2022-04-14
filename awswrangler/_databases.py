@@ -42,7 +42,7 @@ def _get_connection_attributes_from_catalog(
         database_sep = ";databaseName="
     else:
         database_sep = "/"
-    port, database = details["JDBC_CONNECTION_URL"].split(":")[3].split(database_sep)
+    port, database = details["JDBC_CONNECTION_URL"].split(":")[-1].split(database_sep)
     ssl_context: Optional[ssl.SSLContext] = None
     if details.get("JDBC_ENFORCE_SSL") == "true":
         ssl_cert_path: Optional[str] = details.get("CUSTOM_JDBC_CERT")
@@ -57,11 +57,12 @@ def _get_connection_attributes_from_catalog(
                     f"No CA certificate found at {ssl_cert_path}."
                 )
         ssl_context = ssl.create_default_context(cadata=ssl_cadata)
+
     return ConnectionAttributes(
         kind=details["JDBC_CONNECTION_URL"].split(":")[1].lower(),
         user=details["USERNAME"],
         password=details["PASSWORD"],
-        host=details["JDBC_CONNECTION_URL"].split(":")[2].replace("/", ""),
+        host=details["JDBC_CONNECTION_URL"].split(":")[-2].replace("/", "").replace("@", ""),
         port=int(port),
         database=dbname if dbname is not None else database,
         ssl_context=ssl_context,
