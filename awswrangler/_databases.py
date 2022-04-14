@@ -5,6 +5,7 @@ import ssl
 from typing import Any, Dict, Generator, Iterator, List, NamedTuple, Optional, Tuple, Union, cast
 
 import boto3
+import cx_Oracle
 import pandas as pd
 import pyarrow as pa
 
@@ -134,6 +135,8 @@ def _records2df(
     arrays: List[pa.Array] = []
     for col_values, col_name in zip(tuple(zip(*records)), cols_names):  # Transposing
         if (dtype is None) or (col_name not in dtype):
+            if any(isinstance(col_value, cx_Oracle.LOB) for col_value in col_values):
+                col_values = [x.read() if isinstance(x, cx_Oracle.LOB) else x for x in col_values]
             try:
                 array: pa.Array = pa.array(obj=col_values, safe=safe)  # Creating Arrow array
             except pa.ArrowInvalid as ex:
