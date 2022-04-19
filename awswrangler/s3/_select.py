@@ -1,6 +1,7 @@
 """Amazon S3 Select Module (PRIVATE)."""
 
 import concurrent.futures
+import importlib.util
 import itertools
 import json
 import logging
@@ -13,6 +14,12 @@ import pandas as pd
 from awswrangler import _utils, exceptions
 from awswrangler.s3._describe import size_objects
 
+_ray_found = importlib.util.find_spec("ray")
+if _ray_found:
+    import ray
+
+    ray.init(_node_ip_address="0.0.0.0", ignore_reinit_error=True)
+
 _logger: logging.Logger = logging.getLogger(__name__)
 
 _RANGE_CHUNK_SIZE: int = int(1024 * 1024)
@@ -23,11 +30,20 @@ def _gen_scan_range(obj_size: int) -> Iterator[Tuple[int, int]]:
         yield (i, i + min(_RANGE_CHUNK_SIZE, obj_size - i))
 
 
+def _ray_remote(function: Any) -> Any:
+    if _ray_found:
+        return ray.remote(function)
+    return function
+
+
+@_ray_remote
 def _select_object_content(
     args: Dict[str, Any],
-    client_s3: boto3.Session,
+    boto3_session: Optional[boto3.Session],
     scan_range: Optional[Tuple[int, int]] = None,
 ) -> List[Any]:
+    client_s3: boto3.client = _utils.client(service_name="s3", session=boto3_session)
+
     if scan_range:
         response = client_s3.select_object_content(**args, ScanRange={"Start": scan_range[0], "End": scan_range[1]})
     else:
@@ -56,13 +72,22 @@ def _paginate_stream(
     if obj_size is None:
         raise exceptions.InvalidArgumentValue(f"S3 object w/o defined size: {path}")
 
-    client_s3: boto3.client = _utils.client(service_name="s3", session=boto3_session)
-
-    if use_threads is False:
+    if _ray_found:
+        stream_records_futures = []
+        for scan_range in _gen_scan_range(obj_size=obj_size):
+            stream_records_futures.append(
+                _select_object_content.remote(
+                    args=args,
+                    boto3_session=boto3_session,
+                    scan_range=scan_range,
+                )
+            )
+        stream_records = ray.get(stream_records_futures)
+    elif use_threads is False:
         stream_records = list(
             _select_object_content(
                 args=args,
-                client_s3=client_s3,
+                boto3_session=boto3_session,
                 scan_range=scan_range,
             )
             for scan_range in _gen_scan_range(obj_size=obj_size)
@@ -74,7 +99,7 @@ def _paginate_stream(
                 executor.map(
                     _select_object_content,
                     itertools.repeat(args),
-                    itertools.repeat(client_s3),
+                    itertools.repeat(boto3_session),
                     _gen_scan_range(obj_size=obj_size),
                 )
             )
@@ -204,8 +229,11 @@ def select_query(
     ):  # Scan range is only supported for uncompressed CSV/JSON, CSV (without quoted delimiters)
         # and JSON objects (in LINES mode only)
         _logger.debug("Scan ranges are not supported given provided input.")
-        client_s3: boto3.client = _utils.client(service_name="s3", session=boto3_session)
-        records = _select_object_content(args=args, client_s3=client_s3)
+        records = (
+            ray.get(_select_object_content.remote(args=args, boto3_session=boto3_session))
+            if _ray_found
+            else _select_object_content(args=args, boto3_session=boto3_session)
+        )
     else:
         records = _paginate_stream(args=args, path=path, use_threads=use_threads, boto3_session=boto3_session)
     return pd.DataFrame(records)
